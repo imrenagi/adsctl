@@ -38,6 +38,7 @@ adsets:
       targeting:
         geo_locations:
           countries: [ID]
+        instagram_positions: [reels, story]
 creatives:
   - key: post
     payload:
@@ -52,11 +53,12 @@ ads:
 `
 
 type launchServer struct {
-	mu         sync.Mutex
-	objects    map[string]map[string]any
-	creates    int
-	activation []string
-	ambiguous  bool
+	mu               sync.Mutex
+	objects          map[string]map[string]any
+	creates          int
+	activation       []string
+	ambiguous        bool
+	reorderPositions bool
 }
 
 func (s *launchServer) serve(w http.ResponseWriter, r *http.Request) {
@@ -109,6 +111,18 @@ func (s *launchServer) serve(w http.ResponseWriter, r *http.Request) {
 	if obj == nil {
 		_, _ = fmt.Fprint(w, `{"error":{"code":100,"message":"unknown"}}`)
 		return
+	}
+	// Simulate Meta normalizing the order of a set-valued targeting field.
+	if s.reorderPositions {
+		if targeting, ok := obj["targeting"].(map[string]any); ok {
+			if positions, ok := targeting["instagram_positions"].([]any); ok {
+				reversed := make([]any, len(positions))
+				for i := range positions {
+					reversed[i] = positions[len(positions)-1-i]
+				}
+				targeting["instagram_positions"] = reversed
+			}
+		}
 	}
 	_ = json.NewEncoder(w).Encode(obj)
 }
@@ -174,6 +188,36 @@ func TestLaunchFullFlowAndDuplicatePlanGuard(t *testing.T) {
 		t.Fatal("repeat activation", err, server.activation)
 	}
 }
+func TestLaunchResumesAfterProviderReorderedPlacements(t *testing.T) {
+	server := &launchServer{objects: map[string]map[string]any{}, reorderPositions: true}
+	a, out, _, cfg := testApp(t, server.serve)
+	manifest, plan, dir := launchFiles(t)
+	exec := func(args ...string) error {
+		out.Reset()
+		base := append([]string{"--config", cfg, "meta", "launch"}, args...)
+		return executeTest(a, append(base, "--profile", "test", "--account", "123", "--state-dir", dir))
+	}
+	if err := exec("plan", "--file", manifest, "--save", plan); err != nil {
+		t.Fatal(err)
+	}
+	if err := exec("apply", "--plan", plan); err != nil {
+		t.Fatal(err, out.String())
+	}
+	var env struct {
+		Data launch.Run `json:"data"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if env.Data.State != "created_paused" || !env.Data.Ready() {
+		t.Fatal("apply blocked on provider reordering", env.Data.State)
+	}
+	// Resume re-reads every created resource; reordered placements must verify.
+	if err := exec("resume", env.Data.ID); err != nil || server.creates != 4 {
+		t.Fatal("resume blocked after provider reordering", err, server.creates, out.String())
+	}
+}
+
 func TestUnknownLaunchRequiresExplicitReconciliation(t *testing.T) {
 	server := &launchServer{objects: map[string]map[string]any{}, ambiguous: true}
 	a, out, _, cfg := testApp(t, server.serve)

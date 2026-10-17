@@ -70,6 +70,12 @@ func Fields(resource, operation string) map[string]Field {
 			for _, k := range strings.Fields("object_story_spec asset_feed_spec degrees_of_freedom_spec call_to_action contextual_multi_ads") {
 				common[k] = "object"
 			}
+		} else {
+			// Update is metadata-only: an accepted creative's content is frozen,
+			// so only its label fields remain writable. This is the recovery path
+			// for a provider-normalized name; it never recreates the creative.
+			common["name"] = "string"
+			common["adlabels"] = "array"
 		}
 	default:
 		return nil

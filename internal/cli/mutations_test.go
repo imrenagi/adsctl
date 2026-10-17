@@ -92,6 +92,29 @@ func TestVerificationFailurePreservesAppliedReceipt(t *testing.T) {
 	}
 }
 
+func TestCreativeMetadataNameUpdateRecoversNormalizedName(t *testing.T) {
+	posts := 0
+	name := "Launch Video - 2026-10-16"
+	a, out, _, path := testApp(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			posts++
+			if err := r.ParseForm(); err != nil {
+				t.Error(err)
+			}
+			name = r.Form.Get("name")
+			_, _ = fmt.Fprint(w, `{"success":true}`)
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{"id":"456","account_id":"123","name":%q}`, name)
+	})
+	// The provider stored a suffixed name at create; an explicit metadata update
+	// is the recovery path, without recreating the accepted creative.
+	err := executeTest(a, []string{"--config", path, "meta", "creatives", "update", "456", "--profile", "test", "--account", "123", "--name", "Launch Video"})
+	if err != nil || posts != 1 || name != "Launch Video" || !bytes.Contains(out.Bytes(), []byte(`"state": "verified"`)) {
+		t.Fatal(err, posts, name, out.String())
+	}
+}
+
 func TestBudgetCurrencyAndObservedAmount(t *testing.T) {
 	for _, scenario := range []string{"success", "currency", "campaign-owned", "not-converged"} {
 		t.Run(scenario, func(t *testing.T) {

@@ -484,8 +484,8 @@ func verifyStep(r *runtime, s launch.Step, id string, ids map[string]string) err
 	if err != nil {
 		return err
 	}
-	if !schema.MatchesPayload(expected, observed.Value) {
-		return output.Fail("RESOURCE_DRIFT", "Remote object differs from planned fields; review before continuing.", 9)
+	if path := schema.FirstMismatch(s.Resource, expected, observed.Value); path != "" {
+		return output.Fail("RESOURCE_DRIFT", "Remote field "+path+" differs from the reviewed plan; review before continuing.", 9)
 	}
 	return nil
 }
@@ -587,8 +587,8 @@ func activateRun(r *runtime, dir string, run *launch.Run, dry bool) error {
 			return output.Fail("RESOURCE_DRIFT", "Only paused or active recorded objects can be activated.", 9)
 		}
 		delete(p, "status")
-		if !schema.MatchesPayload(p, observed.Value) {
-			return output.Fail("RESOURCE_DRIFT", "Run fields changed since the reviewed plan; activation blocked.", 9)
+		if path := schema.FirstMismatch(s.Resource, p, observed.Value); path != "" {
+			return output.Fail("RESOURCE_DRIFT", "Run field "+path+" changed since the reviewed plan; activation blocked.", 9)
 		}
 		run.Activation[s.Key] = launch.Checkpoint{State: "planned", ID: id, Receipt: map[string]any{"observed": observed.Value, "scope": "Recorded objects only; existing parents retain their configured state."}}
 	}

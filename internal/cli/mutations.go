@@ -266,9 +266,9 @@ func mutate(r *runtime, resource, op, id string, p map[string]any, dry bool) (ma
 		receipt["state"] = "applied_unverified"
 		return receipt, output.Fail("APPLIED_UNVERIFIED", "Configured status has not converged to the requested value.", 9)
 	}
-	if !schema.MatchesPayload(p, observed.Value) {
+	if path := schema.FirstMismatch(resource, p, observed.Value); path != "" {
 		receipt["state"] = "applied_unverified"
-		return receipt, output.Fail("APPLIED_UNVERIFIED", "Observed fields have not converged to the requested values; do not recreate.", 9)
+		return receipt, output.Fail("APPLIED_UNVERIFIED", "Observed field "+path+" has not converged to the requested value; do not recreate.", 9)
 	}
 	receipt["state"] = "verified"
 	receipt["verification"] = "read after write; observed fields returned for comparison"
