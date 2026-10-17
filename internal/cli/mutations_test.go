@@ -108,9 +108,10 @@ func TestStatusMutationsDoNotDuplicateVerificationFields(t *testing.T) {
 			}
 			status := "PAUSED"
 			for _, arg := range args {
-				if arg == "activate" {
+				switch arg {
+				case "activate":
 					status = "ACTIVE"
-				} else if arg == "archive" {
+				case "archive":
 					status = "ARCHIVED"
 				}
 			}
