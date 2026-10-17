@@ -83,10 +83,10 @@ func (a *App) addInventory(meta *cobra.Command) {
 		for _, resource := range []string{"campaigns", "adsets", "ads", "creatives"} {
 			fields := defaultFields(resource)
 			if resource == "campaigns" || resource == "adsets" {
-				fields += ",daily_budget,lifetime_budget"
+				fields = joinFields(fields, "daily_budget,lifetime_budget")
 			}
 			if resource == "adsets" {
-				fields += ",targeting,optimization_goal,billing_event"
+				fields = joinFields(fields, "targeting,optimization_goal,billing_event")
 			}
 			result, err := r.Client.List(r.Ctx, r.Account+"/"+edges[resource], url.Values{"fields": {fields}}, graph.PageOptions{All: true, MaxItems: bound, PageSize: 100})
 			snap.Resources[resource] = result.Rows

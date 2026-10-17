@@ -83,12 +83,42 @@ func TestVerificationFailurePreservesAppliedReceipt(t *testing.T) {
 		if r.Method == "POST" {
 			_, _ = fmt.Fprint(w, `{"id":"456"}`)
 		} else {
+			w.WriteHeader(http.StatusBadRequest)
 			_, _ = fmt.Fprint(w, `{"error":{"code":100,"message":"unavailable field"}}`)
 		}
 	})
 	err := executeTest(a, []string{"--config", path, "meta", "campaigns", "create", "--profile", "test", "--account", "123", "--name", "test", "--objective", "OUTCOME_TRAFFIC", "--special-ad-categories", "NONE"})
-	if err == nil || output.AsError(err).Exit != 9 || !bytes.Contains(out.Bytes(), []byte(`"id": "456"`)) || !bytes.Contains(out.Bytes(), []byte(`"state": "applied_unverified"`)) {
+	if err == nil || output.AsError(err).Exit != 9 || output.AsError(err).HTTPStatus != http.StatusBadRequest || !bytes.Contains(out.Bytes(), []byte(`"id": "456"`)) || !bytes.Contains(out.Bytes(), []byte(`"state": "applied_unverified"`)) || !bytes.Contains(out.Bytes(), []byte(`"verification_error"`)) {
 		t.Fatal(err, out.String())
+	}
+}
+
+func TestStatusMutationsDoNotDuplicateVerificationFields(t *testing.T) {
+	for _, args := range [][]string{
+		{"meta", "ads", "create", "--profile", "test", "--account", "123", "--name", "ad-1", "--adset", "200", "--creative", "300", "--status", "PAUSED"},
+		{"meta", "campaigns", "pause", "456", "--profile", "test", "--account", "123"},
+		{"meta", "campaigns", "activate", "456", "--profile", "test", "--account", "123"},
+		{"meta", "campaigns", "archive", "456", "--profile", "test", "--account", "123"},
+		{"meta", "campaigns", "update", "456", "--profile", "test", "--account", "123", "--status", "PAUSED"},
+	} {
+		a, out, _, path := testApp(t, func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == "POST" {
+				_, _ = fmt.Fprint(w, `{"id":"456","success":true}`)
+				return
+			}
+			status := "PAUSED"
+			for _, arg := range args {
+				if arg == "activate" {
+					status = "ACTIVE"
+				} else if arg == "archive" {
+					status = "ARCHIVED"
+				}
+			}
+			_, _ = fmt.Fprintf(w, `{"id":"456","account_id":"123","adset_id":"200","creative":{"id":"300"},"name":"ad-1","status":%q,"effective_status":%q}`, status, status)
+		})
+		if err := executeTest(a, append([]string{"--config", path}, args...)); err != nil || !bytes.Contains(out.Bytes(), []byte(`"state": "verified"`)) {
+			t.Fatal(args, err, out.String())
+		}
 	}
 }
 

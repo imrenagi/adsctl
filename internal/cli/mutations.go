@@ -250,12 +250,17 @@ func mutate(r *runtime, resource, op, id string, p map[string]any, dry bool) (ma
 	}
 	fields := schema.Keys(p)
 	if resource != "creatives" {
-		fields += ",status,effective_status"
+		fields = joinFields(fields, "status,effective_status")
 	}
 	observed, err := r.Client.Request(r.Ctx, "GET", id, url.Values{"fields": {fields}})
 	if err != nil {
+		cause := output.AsError(err)
 		receipt["state"] = "applied_unverified"
-		return receipt, output.Fail("APPLIED_UNVERIFIED", "Write acknowledged but verification read failed; do not recreate.", 9)
+		receipt["verification_error"] = cause
+		outErr := output.Fail("APPLIED_UNVERIFIED", "Write acknowledged but verification read failed; do not recreate.", 9)
+		outErr.HTTPStatus = cause.HTTPStatus
+		outErr.Provider = cause.Provider
+		return receipt, outErr
 	}
 	receipt["observed"] = observed.Value
 	if fmt.Sprint(observed.Value["account_id"]) != strings.TrimPrefix(r.Account, "act_") {

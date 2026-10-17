@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"adsctl/internal/config"
@@ -15,7 +16,24 @@ import (
 
 func testApp(t *testing.T, h http.HandlerFunc) (*App, *bytes.Buffer, *bytes.Buffer, string) {
 	t.Helper()
-	s := httptest.NewServer(h)
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fields := r.URL.Query().Get("fields"); fields != "" && !strings.Contains(fields, "{") {
+			seen := map[string]bool{}
+			for _, f := range strings.Split(fields, ",") {
+				f = strings.TrimSpace(f)
+				if f == "" {
+					continue
+				}
+				if seen[f] {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = fmt.Fprintf(w, `{"error":{"code":2500,"type":"OAuthException","message":"Syntax error \"Field %s specified more than once. This is only possible before version 2.1\""}}`, f)
+					return
+				}
+				seen[f] = true
+			}
+		}
+		h(w, r)
+	}))
 	t.Cleanup(s.Close)
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	cfg := config.Config{Version: 1, Profiles: map[string]config.Profile{"test": {Platform: "meta", TokenEnv: "ADSCTL_FIXTURE_TOKEN", APIVersion: "v25.0", Mode: "write"}}}
